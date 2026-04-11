@@ -337,7 +337,7 @@ bot.action('cancel', (ctx) => {
   ctx.editMessageText('Отменено. Вы всегда можете добавить услуги позже!');
 });
 
-bot.launch();
+bot.launch({ dropPendingUpdates: true });
 console.log('🤖 Бот AncillaryOS запущен!');
 
 process.once('SIGINT', () => bot.stop('SIGINT'));
