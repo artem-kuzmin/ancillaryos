@@ -349,7 +349,6 @@ const RAILWAY_URL = process.env.RAILWAY_PUBLIC_DOMAIN;
 
 if (RAILWAY_URL) {
   const webhookUrl = `https://${RAILWAY_URL}/bot`;
-  app.use(express.json());
   app.use(bot.webhookCallback('/bot'));
   
   app.get('/', (req, res) => res.send('AncillaryOS работает'));
