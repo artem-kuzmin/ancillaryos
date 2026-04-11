@@ -339,33 +339,33 @@ bot.action('cancel', (ctx) => {
   ctx.editMessageText('Отменено. Вы всегда можете добавить услуги позже!');
 });
 
-async function startBot() {
-  console.log('Сбрасываю старые соединения...');
+const express = require('express');
+const app = express();
+
+const PORT = process.env.PORT || 3000;
+
+// Webhook режим для Railway
+const RAILWAY_URL = process.env.RAILWAY_PUBLIC_DOMAIN;
+
+if (RAILWAY_URL) {
+  const webhookUrl = `https://${RAILWAY_URL}/bot`;
+  app.use(express.json());
+  app.use(bot.webhookCallback('/bot'));
   
-  // Принудительно сбросить старое polling соединение
-  const https = require('https');
-  await new Promise((resolve) => {
-    https.get(
-      `https://api.telegram.org/bot${process.env.BOT_TOKEN}/deleteWebhook?drop_pending_updates=true`,
-      (res) => { res.on('data', () => {}); res.on('end', resolve); }
-    ).on('error', resolve);
+  app.get('/', (req, res) => res.send('AncillaryOS работает'));
+
+  app.listen(PORT, async () => {
+    await bot.telegram.setWebhook(webhookUrl);
+    console.log(`🤖 Бот запущен на webhook: ${webhookUrl}`);
   });
-  
-  // Подождать 5 секунд чтобы старое соединение отвалилось
-  await new Promise(r => setTimeout(r, 5000));
-  
-  console.log('Пытаюсь запустить бот...');
-  try {
-    await bot.launch({ dropPendingUpdates: true });
-    console.log('🤖 Бот AncillaryOS запущен!');
-  } catch (err) {
-    console.log('Ошибка:', err.message);
-    console.log('Повтор через 30 сек...');
-    setTimeout(startBot, 30000);
-  }
+} else {
+  // Локальный режим — polling
+  bot.launch({ dropPendingUpdates: true });
+  console.log('🤖 Бот запущен локально (polling)');
 }
 
-startBot();
+process.once('SIGINT', () => bot.stop('SIGINT'));
+process.once('SIGTERM', () => bot.stop('SIGTERM'));
 
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
