@@ -337,8 +337,17 @@ bot.action('cancel', (ctx) => {
   ctx.editMessageText('Отменено. Вы всегда можете добавить услуги позже!');
 });
 
-bot.launch({ dropPendingUpdates: true });
-console.log('🤖 Бот AncillaryOS запущен!');
+async function startBot() {
+    try {
+      await bot.launch({ dropPendingUpdates: true });
+      console.log('🤖 Бот AncillaryOS запущен!');
+    } catch (err) {
+      console.log('Ошибка запуска, повтор через 30 сек...', err.message);
+      setTimeout(startBot, 30000);
+    }
+  }
+  
+  startBot();
 
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
