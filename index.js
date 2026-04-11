@@ -339,28 +339,29 @@ bot.action('cancel', (ctx) => {
   ctx.editMessageText('Отменено. Вы всегда можете добавить услуги позже!');
 });
 
-// Тест соединения с Telegram
-const https = require('https');
-https.get('https://api.telegram.org/bot' + process.env.BOT_TOKEN + '/getMe', (res) => {
-  let data = '';
-  res.on('data', chunk => data += chunk);
-  res.on('end', () => console.log('Telegram API ответ:', data));
-}).on('error', (err) => console.log('Telegram API недоступен:', err.message));
-
 async function startBot() {
+  console.log('Сбрасываю старые соединения...');
+  
+  // Принудительно сбросить старое polling соединение
+  const https = require('https');
+  await new Promise((resolve) => {
+    https.get(
+      `https://api.telegram.org/bot${process.env.BOT_TOKEN}/deleteWebhook?drop_pending_updates=true`,
+      (res) => { res.on('data', () => {}); res.on('end', resolve); }
+    ).on('error', resolve);
+  });
+  
+  // Подождать 5 секунд чтобы старое соединение отвалилось
+  await new Promise(r => setTimeout(r, 5000));
+  
   console.log('Пытаюсь запустить бот...');
-  
-  const timeout = new Promise((_, reject) => 
-    setTimeout(() => reject(new Error('Timeout 15s')), 15000)
-  );
-  
   try {
-    await Promise.race([bot.launch({ dropPendingUpdates: true }), timeout]);
+    await bot.launch({ dropPendingUpdates: true });
     console.log('🤖 Бот AncillaryOS запущен!');
   } catch (err) {
     console.log('Ошибка:', err.message);
-    console.log('Повтор через 10 сек...');
-    setTimeout(startBot, 10000);
+    console.log('Повтор через 30 сек...');
+    setTimeout(startBot, 30000);
   }
 }
 
