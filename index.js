@@ -341,13 +341,18 @@ bot.action('cancel', (ctx) => {
 
 async function startBot() {
   console.log('Пытаюсь запустить бот...');
+  
+  const timeout = new Promise((_, reject) => 
+    setTimeout(() => reject(new Error('Timeout 15s')), 15000)
+  );
+  
   try {
-    await bot.launch({ dropPendingUpdates: true });
+    await Promise.race([bot.launch({ dropPendingUpdates: true }), timeout]);
     console.log('🤖 Бот AncillaryOS запущен!');
   } catch (err) {
-    console.log('Ошибка запуска:', err.message);
-    console.log('Повтор через 30 сек...');
-    setTimeout(startBot, 30000);
+    console.log('Ошибка:', err.message);
+    console.log('Повтор через 10 сек...');
+    setTimeout(startBot, 10000);
   }
 }
 
