@@ -339,6 +339,14 @@ bot.action('cancel', (ctx) => {
   ctx.editMessageText('Отменено. Вы всегда можете добавить услуги позже!');
 });
 
+// Тест соединения с Telegram
+const https = require('https');
+https.get('https://api.telegram.org/bot' + process.env.BOT_TOKEN + '/getMe', (res) => {
+  let data = '';
+  res.on('data', chunk => data += chunk);
+  res.on('end', () => console.log('Telegram API ответ:', data));
+}).on('error', (err) => console.log('Telegram API недоступен:', err.message));
+
 async function startBot() {
   console.log('Пытаюсь запустить бот...');
   
