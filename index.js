@@ -2,6 +2,8 @@ require('dotenv').config();
 const { Telegraf, Markup } = require('telegraf');
 const { createClient } = require('@supabase/supabase-js');
 
+console.log('BOT_TOKEN exists:', !!process.env.BOT_TOKEN);
+console.log('SUPABASE_URL exists:', !!process.env.SUPABASE_URL);
 const bot = new Telegraf(process.env.BOT_TOKEN);
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
 
