@@ -340,16 +340,18 @@ bot.action('cancel', (ctx) => {
 });
 
 async function startBot() {
-    try {
-      await bot.launch({ dropPendingUpdates: true });
-      console.log('🤖 Бот AncillaryOS запущен!');
-    } catch (err) {
-      console.log('Ошибка запуска, повтор через 30 сек...', err.message);
-      setTimeout(startBot, 30000);
-    }
+  console.log('Пытаюсь запустить бот...');
+  try {
+    await bot.launch({ dropPendingUpdates: true });
+    console.log('🤖 Бот AncillaryOS запущен!');
+  } catch (err) {
+    console.log('Ошибка запуска:', err.message);
+    console.log('Повтор через 30 сек...');
+    setTimeout(startBot, 30000);
   }
-  
-  startBot();
+}
+
+startBot();
 
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
