@@ -5,6 +5,9 @@ const { createClient } = require('@supabase/supabase-js');
 console.log('BOT_TOKEN exists:', !!process.env.BOT_TOKEN);
 console.log('SUPABASE_URL exists:', !!process.env.SUPABASE_URL);
 const bot = new Telegraf(process.env.BOT_TOKEN);
+bot.catch((err, ctx) => {
+  console.log('Ошибка бота:', err.message);
+});
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
 
 // In-memory cart for active sessions (maps short IDs to full data)
@@ -349,11 +352,14 @@ const RAILWAY_URL = process.env.RAILWAY_PUBLIC_DOMAIN;
 
 if (RAILWAY_URL) {
   const webhookUrl = `https://${RAILWAY_URL}/bot`;
-  app.use('/bot', (req, res, next) => {
-    console.log('Входящий запрос:', req.method, req.headers['content-type']);
-    next();
+  app.use(express.json());
+  app.post('/bot', (req, res) => {
+    console.log('Получен webhook запрос');
+    bot.handleUpdate(req.body, res).catch(err => {
+      console.log('Ошибка обработки:', err.message);
+      res.sendStatus(500);
+    });
   });
-  app.use(bot.webhookCallback('/bot'));
   
   app.get('/', (req, res) => res.send('AncillaryOS работает'));
 
