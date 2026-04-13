@@ -232,6 +232,14 @@ const TEMPLATES = [
 // ============ ГОСТЕВОЙ ФЛОУ ============
 
 bot.start(async (ctx) => {
+  console.log('START команда получена от:', ctx.from.id);
+  try {
+    await ctx.reply('Тест — бот работает!');
+    console.log('Ответ отправлен');
+  } catch (err) {
+    console.log('Ошибка отправки:', err.message);
+  }
+  return;
   const payload = ctx.startPayload;
 
   if (!payload || !payload.startsWith('b_')) {
