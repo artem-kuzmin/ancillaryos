@@ -21,7 +21,7 @@ bot.command('addproperty', async (ctx) => {
   }).select().single();
 
   if (error) return ctx.reply('Ошибка: ' + error.message);
-  ctx.reply(`✅ Объект добавлен: ${data.name}\nID: ${data.id}\n\nТеперь добавьте услуги:\n/addancillary ${data.id} | Ранний заезд | 1500 | 2000`);
+  ctx.reply(`✅ Объект добавлен: ${data.name}\n\nТеперь добавьте услуги — отправьте /templates чтобы добавить готовый набор из 10 популярных услуг.`);
 });
 
 bot.command('myproperties', async (ctx) => {
