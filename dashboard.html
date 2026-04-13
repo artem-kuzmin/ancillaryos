@@ -72,9 +72,9 @@
     }
 
     async function login() {
-      setState({ authLoading: true, authError: null });
       const email = document.getElementById('auth-email').value;
       const password = document.getElementById('auth-password').value;
+      setState({ authLoading: true, authError: null });
 
       const { data, error } = await sb.auth.signInWithPassword({ email, password });
       if (error) {
@@ -87,10 +87,10 @@
     }
 
     async function register() {
-      setState({ authLoading: true, authError: null });
       const email = document.getElementById('auth-email').value;
       const password = document.getElementById('auth-password').value;
       const name = document.getElementById('auth-name').value;
+      setState({ authLoading: true, authError: null });
 
       if (password.length < 6) {
         return setState({ authError: 'Пароль минимум 6 символов', authLoading: false });
