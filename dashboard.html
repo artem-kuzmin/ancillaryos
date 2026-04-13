@@ -222,10 +222,12 @@
             <div class="tab ${state.tab === 'properties' ? 'tab-active' : ''}" onclick="setState({tab:'properties'})">🏠 Объекты</div>
             <div class="tab ${state.tab === 'bookings' ? 'tab-active' : ''}" onclick="setState({tab:'bookings'}); loadBookings()">📅 Бронирования</div>
             <div class="tab ${state.tab === 'revenue' ? 'tab-active' : ''}" onclick="setState({tab:'revenue'}); loadPurchases()">💰 Доходы</div>
+            <div class="tab ${state.tab === 'settings' ? 'tab-active' : ''}" onclick="setState({tab:'settings'}); loadProfile()">⚙️ Настройки</div>
           </div>
           ${state.tab === 'properties' ? renderProperties() : ''}
           ${state.tab === 'bookings' ? renderBookings() : ''}
           ${state.tab === 'revenue' ? renderRevenue() : ''}
+          ${state.tab === 'settings' ? renderSettings() : ''}
         </div>
       `;
     }
@@ -438,7 +440,50 @@
         </div>
       `;
     }
+    let hostProfile = { telegram_id: '' };
 
+async function loadProfile() {
+  const { data } = await sb.from('host_profiles').select('*').eq('user_id', currentUser.id).single();
+  if (data) hostProfile = data;
+  render();
+}
+
+async function saveTelegramId() {
+  const tgId = document.getElementById('tg-id').value;
+  if (!tgId) return;
+
+  const { data: existing } = await sb.from('host_profiles').select('user_id').eq('user_id', currentUser.id).single();
+
+  if (existing) {
+    await sb.from('host_profiles').update({ telegram_id: parseInt(tgId) }).eq('user_id', currentUser.id);
+  } else {
+    await sb.from('host_profiles').insert({ user_id: currentUser.id, telegram_id: parseInt(tgId) });
+  }
+
+  // Обновить все объекты хоста
+  await sb.from('properties').update({ pm_telegram_id: parseInt(tgId) }).eq('host_id', currentUser.id);
+
+  hostProfile.telegram_id = parseInt(tgId);
+  render();
+  alert('Telegram ID сохранён! Теперь вы будете получать уведомления о покупках.');
+}
+
+function renderSettings() {
+  return `
+    <div class="card p-6">
+      <h2 class="text-lg font-semibold mb-4">Настройки</h2>
+      <div class="mb-4">
+        <label class="text-sm font-medium text-gray-700 block mb-1">Telegram ID</label>
+        <p class="text-xs text-gray-400 mb-2">Отправьте /myid боту <a href="https://t.me/${BOT_USERNAME}" target="_blank" class="text-blue-600">@${BOT_USERNAME}</a> чтобы узнать свой ID</p>
+        <div class="flex gap-2">
+          <input class="input" id="tg-id" value="${hostProfile.telegram_id || ''}" placeholder="Например: 291109113">
+          <button class="btn btn-primary" onclick="saveTelegramId()">Сохранить</button>
+        </div>
+        ${hostProfile.telegram_id ? '<p class="text-xs text-green-600 mt-2">✅ Telegram подключён</p>' : '<p class="text-xs text-orange-500 mt-2">⚠️ Без Telegram ID вы не будете получать уведомления</p>'}
+      </div>
+    </div>
+  `;
+}
     // Init
     checkAuth();
   </script>

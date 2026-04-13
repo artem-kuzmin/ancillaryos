@@ -43,6 +43,9 @@ bot.command('addancillary', async (ctx) => {
   ctx.reply(`✅ Услуга добавлена: ${data.name} (₽${data.price_weekday} будни / ₽${data.price_weekend} выходные)`);
 });
 
+bot.command('myid', async (ctx) => {
+  ctx.reply(`Ваш Telegram ID: ${ctx.from.id}\n\nСкопируйте и вставьте в настройках дашборда.`);
+});
 bot.command('newbooking', async (ctx) => {
   const { data: properties } = await supabase.from('properties').select('id, name').eq('pm_telegram_id', ctx.from.id);
   if (!properties || properties.length === 0) return ctx.reply('Сначала добавьте объект: /addproperty');
