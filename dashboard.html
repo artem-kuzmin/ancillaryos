@@ -219,7 +219,7 @@
 
       return `
         <div class="card p-4 mb-3">
-          <div class="flex items-center justify-between cursor-pointer" onclick="${isExpanded ? '' : `loadAncillaries('${p.id}')`}">
+          <div class="flex items-center justify-between cursor-pointer" onclick="${isExpanded ? `delete state.ancillaries['${p.id}']; render()` : `loadAncillaries('${p.id}')`}">
             <div>
               <h3 class="font-semibold text-gray-800">${p.name}</h3>
               <p class="text-sm text-gray-500">${p.address || ''}</p>
