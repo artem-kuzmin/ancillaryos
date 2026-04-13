@@ -15,6 +15,8 @@
     .btn-primary:hover { background: #1d4ed8; }
     .btn-secondary { background: #f1f5f9; color: #334155; }
     .btn-secondary:hover { background: #e2e8f0; }
+    .btn-danger { background: #fef2f2; color: #dc2626; }
+    .btn-danger:hover { background: #fee2e2; }
     .input { border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px 12px; width: 100%; outline: none; }
     .input:focus { border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37,99,235,0.1); }
     .tab-active { border-bottom: 2px solid #2563eb; color: #2563eb; font-weight: 600; }
@@ -25,6 +27,8 @@
     .toggle-on { background: #2563eb; }
     .toggle-on::after { left: 22px; }
     .toggle-off { background: #cbd5e1; }
+    .auth-container { max-width: 400px; margin: 80px auto; }
+    .error-msg { background: #fef2f2; color: #dc2626; padding: 8px 12px; border-radius: 8px; font-size: 14px; margin-bottom: 12px; }
   </style>
 </head>
 <body>
@@ -35,6 +39,7 @@
     const BOT_USERNAME = '__BOT_USERNAME__';
     const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
+    let currentUser = null;
     let state = {
       tab: 'properties',
       properties: [],
@@ -45,6 +50,9 @@
       showAddProperty: false,
       showAddAncillary: null,
       showAddBooking: null,
+      authMode: 'login',
+      authError: null,
+      authLoading: false,
     };
 
     function setState(updates) {
@@ -52,10 +60,67 @@
       render();
     }
 
+    // ============ AUTH ============
+
+    async function checkAuth() {
+      const { data: { session } } = await sb.auth.getSession();
+      if (session) {
+        currentUser = session.user;
+        loadProperties();
+      }
+      render();
+    }
+
+    async function login() {
+      setState({ authLoading: true, authError: null });
+      const email = document.getElementById('auth-email').value;
+      const password = document.getElementById('auth-password').value;
+
+      const { data, error } = await sb.auth.signInWithPassword({ email, password });
+      if (error) {
+        setState({ authError: error.message, authLoading: false });
+      } else {
+        currentUser = data.user;
+        setState({ authLoading: false });
+        loadProperties();
+      }
+    }
+
+    async function register() {
+      setState({ authLoading: true, authError: null });
+      const email = document.getElementById('auth-email').value;
+      const password = document.getElementById('auth-password').value;
+      const name = document.getElementById('auth-name').value;
+
+      if (password.length < 6) {
+        return setState({ authError: 'Пароль минимум 6 символов', authLoading: false });
+      }
+
+      const { data, error } = await sb.auth.signUp({
+        email, password,
+        options: { data: { name } }
+      });
+      if (error) {
+        setState({ authError: error.message, authLoading: false });
+      } else {
+        currentUser = data.user;
+        setState({ authError: null, authLoading: false });
+        loadProperties();
+      }
+    }
+
+    async function logout() {
+      await sb.auth.signOut();
+      currentUser = null;
+      state = { ...state, properties: [], ancillaries: {}, bookings: [], purchases: [], tab: 'properties' };
+      render();
+    }
+
     // ============ DATA ============
 
     async function loadProperties() {
-      const { data } = await sb.from('properties').select('*').order('created_at', { ascending: false });
+      if (!currentUser) return;
+      const { data } = await sb.from('properties').select('*').eq('host_id', currentUser.id).order('created_at', { ascending: false });
       setState({ properties: data || [] });
     }
 
@@ -66,18 +131,26 @@
     }
 
     async function loadBookings() {
-      const { data } = await sb.from('bookings').select('*, properties(name)').order('checkin_date', { ascending: false });
+      if (!currentUser) return;
+      const propIds = state.properties.map(p => p.id);
+      if (propIds.length === 0) return setState({ bookings: [] });
+      const { data } = await sb.from('bookings').select('*, properties(name)').in('property_id', propIds).order('checkin_date', { ascending: false });
       setState({ bookings: data || [] });
     }
 
     async function loadPurchases() {
-      const { data } = await sb.from('purchases').select('*, ancillaries(name), bookings(guest_name, properties(name))').eq('status', 'paid').order('created_at', { ascending: false });
+      if (!currentUser) return;
+      const propIds = state.properties.map(p => p.id);
+      if (propIds.length === 0) return setState({ purchases: [] });
+      const { data } = await sb.from('purchases')
+        .select('*, ancillaries(name), bookings!inner(guest_name, property_id, properties(name))')
+        .in('bookings.property_id', propIds)
+        .eq('status', 'paid').order('created_at', { ascending: false });
       setState({ purchases: data || [] });
     }
 
     async function addProperty(name, address) {
-      // Use a placeholder PM telegram ID for web-created properties
-      await sb.from('properties').insert({ name, address, pm_telegram_id: 0 });
+      await sb.from('properties').insert({ name, address, host_id: currentUser.id, pm_telegram_id: 0 });
       setState({ showAddProperty: false });
       loadProperties();
     }
@@ -132,10 +205,18 @@
 
     function render() {
       const app = document.getElementById('app');
+      if (!currentUser) {
+        app.innerHTML = renderAuth();
+        return;
+      }
       app.innerHTML = `
         <div class="max-w-5xl mx-auto px-4 py-6">
           <div class="flex items-center justify-between mb-6">
             <h1 class="text-2xl font-bold text-gray-800">AncillaryOS</h1>
+            <div class="flex items-center gap-3">
+              <span class="text-sm text-gray-500">${currentUser.email}</span>
+              <button class="btn btn-secondary text-sm" onclick="logout()">Выйти</button>
+            </div>
           </div>
           <div class="flex border-b mb-6">
             <div class="tab ${state.tab === 'properties' ? 'tab-active' : ''}" onclick="setState({tab:'properties'})">🏠 Объекты</div>
@@ -145,6 +226,32 @@
           ${state.tab === 'properties' ? renderProperties() : ''}
           ${state.tab === 'bookings' ? renderBookings() : ''}
           ${state.tab === 'revenue' ? renderRevenue() : ''}
+        </div>
+      `;
+    }
+
+    function renderAuth() {
+      const isLogin = state.authMode === 'login';
+      return `
+        <div class="auth-container">
+          <div class="card p-8">
+            <h1 class="text-2xl font-bold text-center mb-2">AncillaryOS</h1>
+            <p class="text-sm text-gray-500 text-center mb-6">Дополнительные услуги для ваших гостей</p>
+            ${state.authError ? `<div class="error-msg">${state.authError}</div>` : ''}
+            ${!isLogin ? `<input class="input mb-3" id="auth-name" placeholder="Ваше имя">` : ''}
+            <input class="input mb-3" id="auth-email" placeholder="Email" type="email">
+            <input class="input mb-4" id="auth-password" placeholder="Пароль" type="password"
+              onkeydown="if(event.key==='Enter') ${isLogin ? 'login()' : 'register()'}">
+            <button class="btn btn-primary w-full mb-3" onclick="${isLogin ? 'login()' : 'register()'}" ${state.authLoading ? 'disabled' : ''}>
+              ${state.authLoading ? '...' : (isLogin ? 'Войти' : 'Зарегистрироваться')}
+            </button>
+            <p class="text-sm text-center text-gray-500">
+              ${isLogin
+                ? `Нет аккаунта? <span class="text-blue-600 cursor-pointer" onclick="setState({authMode:'register', authError:null})">Зарегистрируйтесь</span>`
+                : `Уже есть аккаунт? <span class="text-blue-600 cursor-pointer" onclick="setState({authMode:'login', authError:null})">Войдите</span>`
+              }
+            </p>
+          </div>
         </div>
       `;
     }
@@ -168,6 +275,7 @@
           <button class="btn btn-primary" onclick="setState({showAddProperty:true})">+ Добавить объект</button>
         </div>
         ${addForm}
+        ${state.properties.length === 0 ? '<div class="card p-8 text-center text-gray-400">Добавьте свой первый объект</div>' : ''}
         ${state.properties.map(p => renderProperty(p)).join('')}
       `;
     }
@@ -332,8 +440,7 @@
     }
 
     // Init
-    loadProperties();
-    render();
+    checkAuth();
   </script>
 </body>
 </html>
