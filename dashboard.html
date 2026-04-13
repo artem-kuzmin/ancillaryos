@@ -29,6 +29,7 @@
     .toggle-off { background: #cbd5e1; }
     .auth-container { max-width: 400px; margin: 80px auto; }
     .error-msg { background: #fef2f2; color: #dc2626; padding: 8px 12px; border-radius: 8px; font-size: 14px; margin-bottom: 12px; }
+    .warning-banner { background: #fffbeb; border: 1px solid #fbbf24; color: #92400e; padding: 12px 16px; border-radius: 8px; margin-bottom: 16px; font-size: 14px; }
   </style>
 </head>
 <body>
@@ -40,8 +41,9 @@
     const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
     let currentUser = null;
+    let hostProfile = { telegram_id: '' };
     let state = {
-      tab: 'properties',
+      tab: window.location.hash.replace('#', '') || 'properties',
       properties: [],
       ancillaries: {},
       bookings: [],
@@ -57,6 +59,7 @@
 
     function setState(updates) {
       Object.assign(state, updates);
+      if (updates.tab) window.location.hash = updates.tab;
       render();
     }
 
@@ -66,6 +69,7 @@
       const { data: { session } } = await sb.auth.getSession();
       if (session) {
         currentUser = session.user;
+        await loadProfile();
         loadProperties();
       }
       render();
@@ -81,6 +85,7 @@
         setState({ authError: error.message, authLoading: false });
       } else {
         currentUser = data.user;
+        await loadProfile();
         setState({ authLoading: false });
         loadProperties();
       }
@@ -112,11 +117,18 @@
     async function logout() {
       await sb.auth.signOut();
       currentUser = null;
+      hostProfile = { telegram_id: '' };
       state = { ...state, properties: [], ancillaries: {}, bookings: [], purchases: [], tab: 'properties' };
       render();
     }
 
     // ============ DATA ============
+
+    async function loadProfile() {
+      if (!currentUser) return;
+      const { data } = await sb.from('host_profiles').select('*').eq('user_id', currentUser.id).single();
+      if (data) hostProfile = data;
+    }
 
     async function loadProperties() {
       if (!currentUser) return;
@@ -150,7 +162,8 @@
     }
 
     async function addProperty(name, address) {
-      await sb.from('properties').insert({ name, address, host_id: currentUser.id, pm_telegram_id: 0 });
+      const tgId = hostProfile.telegram_id || 0;
+      await sb.from('properties').insert({ name, address, host_id: currentUser.id, pm_telegram_id: tgId });
       setState({ showAddProperty: false });
       loadProperties();
     }
@@ -185,9 +198,15 @@
       loadAncillaries(propertyId);
     }
 
+    // Фикс 1: обновляем локально без перезагрузки — нет прыжков
     async function toggleAncillary(id, propertyId, currentActive) {
       await sb.from('ancillaries').update({ is_active: !currentActive }).eq('id', id);
-      loadAncillaries(propertyId);
+      const anc = state.ancillaries[propertyId];
+      if (anc) {
+        const item = anc.find(a => a.id === id);
+        if (item) item.is_active = !currentActive;
+        render();
+      }
     }
 
     async function deleteAncillary(id, propertyId) {
@@ -201,6 +220,38 @@
       loadBookings();
     }
 
+    // Фикс 2: динамическое сообщение с реальными услугами
+    async function copyGuestMessage(btn, bookingId, guestName, propertyId) {
+      const { data: ancs } = await sb.from('ancillaries').select('name').eq('property_id', propertyId).eq('is_active', true).limit(3);
+      const link = 'https://t.me/' + BOT_USERNAME + '?start=b_' + bookingId;
+      const services = ancs && ancs.length > 0
+        ? ancs.map(a => a.name.toLowerCase()).join(', ')
+        : 'дополнительные услуги';
+      const msg = 'Здравствуйте, ' + guestName + '! Мы подготовили для вас услуги к проживанию: ' + services + ' и другое. Посмотреть и заказать: ' + link;
+      await navigator.clipboard.writeText(msg);
+      btn.textContent = 'Скопировано!';
+      setTimeout(() => { btn.textContent = '📋 Скопировать сообщение'; }, 2000);
+    }
+
+    async function saveTelegramId() {
+      const tgId = document.getElementById('tg-id').value;
+      if (!tgId) return;
+
+      const { data: existing } = await sb.from('host_profiles').select('user_id').eq('user_id', currentUser.id).single();
+
+      if (existing) {
+        await sb.from('host_profiles').update({ telegram_id: parseInt(tgId) }).eq('user_id', currentUser.id);
+      } else {
+        await sb.from('host_profiles').insert({ user_id: currentUser.id, telegram_id: parseInt(tgId) });
+      }
+
+      await sb.from('properties').update({ pm_telegram_id: parseInt(tgId) }).eq('host_id', currentUser.id);
+
+      hostProfile.telegram_id = parseInt(tgId);
+      render();
+      alert('Telegram ID сохранён! Теперь вы будете получать уведомления о покупках.');
+    }
+
     // ============ RENDER ============
 
     function render() {
@@ -209,6 +260,15 @@
         app.innerHTML = renderAuth();
         return;
       }
+
+      const noTelegram = !hostProfile.telegram_id;
+      const warningBanner = noTelegram ? `
+        <div class="warning-banner">
+          ⚠️ Telegram не подключён — вы не будете получать уведомления о покупках.
+          <span class="text-blue-700 cursor-pointer underline" onclick="setState({tab:'settings'}); loadProfile()">Подключить</span>
+        </div>
+      ` : '';
+
       app.innerHTML = `
         <div class="max-w-5xl mx-auto px-4 py-6">
           <div class="flex items-center justify-between mb-6">
@@ -218,11 +278,12 @@
               <button class="btn btn-secondary text-sm" onclick="logout()">Выйти</button>
             </div>
           </div>
+          ${warningBanner}
           <div class="flex border-b mb-6">
             <div class="tab ${state.tab === 'properties' ? 'tab-active' : ''}" onclick="setState({tab:'properties'})">🏠 Объекты</div>
             <div class="tab ${state.tab === 'bookings' ? 'tab-active' : ''}" onclick="setState({tab:'bookings'}); loadBookings()">📅 Бронирования</div>
             <div class="tab ${state.tab === 'revenue' ? 'tab-active' : ''}" onclick="setState({tab:'revenue'}); loadPurchases()">💰 Доходы</div>
-            <div class="tab ${state.tab === 'settings' ? 'tab-active' : ''}" onclick="setState({tab:'settings'}); loadProfile()">⚙️ Настройки</div>
+            <div class="tab ${state.tab === 'settings' ? 'tab-active' : ''}" onclick="setState({tab:'settings'})">⚙️ Настройки</div>
           </div>
           ${state.tab === 'properties' ? renderProperties() : ''}
           ${state.tab === 'bookings' ? renderBookings() : ''}
@@ -378,7 +439,6 @@
       ` : '';
 
       const rows = state.bookings.map(b => {
-        const link = `https://t.me/${BOT_USERNAME}?start=b_${b.id}`;
         const today = new Date().toISOString().split('T')[0];
         const isPast = b.checkout_date < today;
         return `
@@ -389,7 +449,7 @@
                 <span class="text-sm text-gray-400 ml-2">${b.properties?.name || ''}</span>
                 <p class="text-sm text-gray-500 mt-1">📅 ${b.checkin_date} → ${b.checkout_date}</p>
               </div>
-              <button class="btn btn-secondary text-xs" onclick="navigator.clipboard.writeText('Здравствуйте, ${b.guest_name}! Мы подготовили для вас дополнительные услуги к проживанию: ранний заезд, поздний выезд, трансфер и другое. Посмотреть и заказать: ${link}'); this.textContent='Скопировано!'">📋 Скопировать сообщение</button>
+              <button class="btn btn-secondary text-xs" onclick="copyGuestMessage(this, '${b.id}', '${(b.guest_name || '').replace(/'/g, "\\'")}', '${b.property_id}')">📋 Скопировать сообщение</button>
             </div>
           </div>
         `;
@@ -440,50 +500,24 @@
         </div>
       `;
     }
-    let hostProfile = { telegram_id: '' };
 
-async function loadProfile() {
-  const { data } = await sb.from('host_profiles').select('*').eq('user_id', currentUser.id).single();
-  if (data) hostProfile = data;
-  render();
-}
-
-async function saveTelegramId() {
-  const tgId = document.getElementById('tg-id').value;
-  if (!tgId) return;
-
-  const { data: existing } = await sb.from('host_profiles').select('user_id').eq('user_id', currentUser.id).single();
-
-  if (existing) {
-    await sb.from('host_profiles').update({ telegram_id: parseInt(tgId) }).eq('user_id', currentUser.id);
-  } else {
-    await sb.from('host_profiles').insert({ user_id: currentUser.id, telegram_id: parseInt(tgId) });
-  }
-
-  // Обновить все объекты хоста
-  await sb.from('properties').update({ pm_telegram_id: parseInt(tgId) }).eq('host_id', currentUser.id);
-
-  hostProfile.telegram_id = parseInt(tgId);
-  render();
-  alert('Telegram ID сохранён! Теперь вы будете получать уведомления о покупках.');
-}
-
-function renderSettings() {
-  return `
-    <div class="card p-6">
-      <h2 class="text-lg font-semibold mb-4">Настройки</h2>
-      <div class="mb-4">
-        <label class="text-sm font-medium text-gray-700 block mb-1">Telegram ID</label>
-        <p class="text-xs text-gray-400 mb-2">Отправьте /myid боту <a href="https://t.me/${BOT_USERNAME}" target="_blank" class="text-blue-600">@${BOT_USERNAME}</a> чтобы узнать свой ID</p>
-        <div class="flex gap-2">
-          <input class="input" id="tg-id" value="${hostProfile.telegram_id || ''}" placeholder="Например: 291109113">
-          <button class="btn btn-primary" onclick="saveTelegramId()">Сохранить</button>
+    function renderSettings() {
+      return `
+        <div class="card p-6">
+          <h2 class="text-lg font-semibold mb-4">Настройки</h2>
+          <div class="mb-4">
+            <label class="text-sm font-medium text-gray-700 block mb-1">Telegram ID</label>
+            <p class="text-xs text-gray-400 mb-2">Отправьте /myid боту <a href="https://t.me/${BOT_USERNAME}" target="_blank" class="text-blue-600">@${BOT_USERNAME}</a> чтобы узнать свой ID</p>
+            <div class="flex gap-2">
+              <input class="input" id="tg-id" value="${hostProfile.telegram_id || ''}" placeholder="Например: 291109113">
+              <button class="btn btn-primary" onclick="saveTelegramId()">Сохранить</button>
+            </div>
+            ${hostProfile.telegram_id ? '<p class="text-xs text-green-600 mt-2">✅ Telegram подключён</p>' : '<p class="text-xs text-orange-500 mt-2">⚠️ Без Telegram ID вы не будете получать уведомления</p>'}
+          </div>
         </div>
-        ${hostProfile.telegram_id ? '<p class="text-xs text-green-600 mt-2">✅ Telegram подключён</p>' : '<p class="text-xs text-orange-500 mt-2">⚠️ Без Telegram ID вы не будете получать уведомления</p>'}
-      </div>
-    </div>
-  `;
-}
+      `;
+    }
+
     // Init
     checkAuth();
   </script>
