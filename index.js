@@ -354,7 +354,7 @@ if (RAILWAY_URL) {
   const webhookUrl = `https://${RAILWAY_URL}/bot`;
   app.use(express.json());
   app.post('/bot', (req, res) => {
-    console.log('Получен webhook запрос');
+    console.log('Получен webhook запрос, body:', JSON.stringify(req.body).slice(0, 200));
     bot.handleUpdate(req.body, res).catch(err => {
       console.log('Ошибка обработки:', err.message);
       res.sendStatus(500);
