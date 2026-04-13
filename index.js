@@ -263,6 +263,15 @@ if (RAILWAY_URL) {
       res.sendStatus(200);
     }
   });
+  const fs = require('fs');
+  const path = require('path');
+  app_express.get('/dashboard', (req, res) => {
+    let html = fs.readFileSync(path.join(__dirname, 'dashboard.html'), 'utf8');
+    html = html.replace('__SUPABASE_URL__', process.env.SUPABASE_URL);
+    html = html.replace('__SUPABASE_KEY__', process.env.SUPABASE_KEY);
+    html = html.replace('__BOT_USERNAME__', 'ancillaryos_test_bot');
+    res.send(html);
+  });
   app_express.get('/', (req, res) => res.send('AncillaryOS работает'));
   app_express.listen(PORT, async () => {
     await bot.telegram.setWebhook(webhookUrl);

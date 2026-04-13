@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AncillaryOS — Панель управления</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&display=swap');
+    body { font-family: 'Manrope', sans-serif; background: #f8f9fb; }
+    .card { background: white; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+    .btn { padding: 8px 16px; border-radius: 8px; font-weight: 600; cursor: pointer; transition: all 0.15s; }
+    .btn-primary { background: #2563eb; color: white; }
+    .btn-primary:hover { background: #1d4ed8; }
+    .btn-secondary { background: #f1f5f9; color: #334155; }
+    .btn-secondary:hover { background: #e2e8f0; }
+    .input { border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px 12px; width: 100%; outline: none; }
+    .input:focus { border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37,99,235,0.1); }
+    .tab-active { border-bottom: 2px solid #2563eb; color: #2563eb; font-weight: 600; }
+    .tab { padding: 12px 20px; cursor: pointer; color: #64748b; border-bottom: 2px solid transparent; }
+    .tab:hover { color: #334155; }
+    .toggle { width: 44px; height: 24px; border-radius: 12px; cursor: pointer; transition: all 0.2s; position: relative; }
+    .toggle::after { content: ''; width: 20px; height: 20px; border-radius: 50%; background: white; position: absolute; top: 2px; left: 2px; transition: all 0.2s; }
+    .toggle-on { background: #2563eb; }
+    .toggle-on::after { left: 22px; }
+    .toggle-off { background: #cbd5e1; }
+  </style>
+</head>
+<body>
+  <div id="app"></div>
+  <script>
+    const SUPABASE_URL = '__SUPABASE_URL__';
+    const SUPABASE_KEY = '__SUPABASE_KEY__';
+    const BOT_USERNAME = '__BOT_USERNAME__';
+    const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    let state = {
+      tab: 'properties',
+      properties: [],
+      ancillaries: {},
+      bookings: [],
+      purchases: [],
+      editingAncillary: null,
+      showAddProperty: false,
+      showAddAncillary: null,
+      showAddBooking: null,
+    };
+
+    function setState(updates) {
+      Object.assign(state, updates);
+      render();
+    }
+
+    // ============ DATA ============
+
+    async function loadProperties() {
+      const { data } = await sb.from('properties').select('*').order('created_at', { ascending: false });
+      setState({ properties: data || [] });
+    }
+
+    async function loadAncillaries(propertyId) {
+      const { data } = await sb.from('ancillaries').select('*').eq('property_id', propertyId).order('created_at');
+      state.ancillaries[propertyId] = data || [];
+      render();
+    }
+
+    async function loadBookings() {
+      const { data } = await sb.from('bookings').select('*, properties(name)').order('checkin_date', { ascending: false });
+      setState({ bookings: data || [] });
+    }
+
+    async function loadPurchases() {
+      const { data } = await sb.from('purchases').select('*, ancillaries(name), bookings(guest_name, properties(name))').eq('status', 'paid').order('created_at', { ascending: false });
+      setState({ purchases: data || [] });
+    }
+
+    async function addProperty(name, address) {
+      // Use a placeholder PM telegram ID for web-created properties
+      await sb.from('properties').insert({ name, address, pm_telegram_id: 0 });
+      setState({ showAddProperty: false });
+      loadProperties();
+    }
+
+    async function addTemplates(propertyId) {
+      const templates = [
+        { name: 'Ранний заезд (с 10:00)', price_weekday: 1500, price_weekend: 2000 },
+        { name: 'Поздний выезд (до 18:00)', price_weekday: 1500, price_weekend: 2500 },
+        { name: 'Дополнительная уборка', price_weekday: 2000, price_weekend: 2000 },
+        { name: 'Пакет продуктов к заезду', price_weekday: 2500, price_weekend: 2500 },
+        { name: 'Праздничный декор', price_weekday: 3000, price_weekend: 3500 },
+        { name: 'Парковочное место', price_weekday: 500, price_weekend: 500 },
+        { name: 'Комплект полотенец', price_weekday: 500, price_weekend: 500 },
+        { name: 'Аренда детской кроватки', price_weekday: 800, price_weekend: 800 },
+        { name: 'Трансфер из аэропорта', price_weekday: 3000, price_weekend: 3000 },
+        { name: 'Размещение с питомцем', price_weekday: 1000, price_weekend: 1000 },
+      ];
+      const rows = templates.map(t => ({ property_id: propertyId, ...t }));
+      await sb.from('ancillaries').insert(rows);
+      loadAncillaries(propertyId);
+    }
+
+    async function addAncillary(propertyId, name, weekday, weekend) {
+      await sb.from('ancillaries').insert({ property_id: propertyId, name, price_weekday: weekday, price_weekend: weekend });
+      setState({ showAddAncillary: null });
+      loadAncillaries(propertyId);
+    }
+
+    async function updateAncillary(id, propertyId, updates) {
+      await sb.from('ancillaries').update(updates).eq('id', id);
+      setState({ editingAncillary: null });
+      loadAncillaries(propertyId);
+    }
+
+    async function toggleAncillary(id, propertyId, currentActive) {
+      await sb.from('ancillaries').update({ is_active: !currentActive }).eq('id', id);
+      loadAncillaries(propertyId);
+    }
+
+    async function deleteAncillary(id, propertyId) {
+      await sb.from('ancillaries').delete().eq('id', id);
+      loadAncillaries(propertyId);
+    }
+
+    async function addBooking(propertyId, guestName, checkin, checkout) {
+      await sb.from('bookings').insert({ property_id: propertyId, guest_name: guestName, checkin_date: checkin, checkout_date: checkout });
+      setState({ showAddBooking: null });
+      loadBookings();
+    }
+
+    // ============ RENDER ============
+
+    function render() {
+      const app = document.getElementById('app');
+      app.innerHTML = `
+        <div class="max-w-5xl mx-auto px-4 py-6">
+          <div class="flex items-center justify-between mb-6">
+            <h1 class="text-2xl font-bold text-gray-800">AncillaryOS</h1>
+          </div>
+          <div class="flex border-b mb-6">
+            <div class="tab ${state.tab === 'properties' ? 'tab-active' : ''}" onclick="setState({tab:'properties'})">🏠 Объекты</div>
+            <div class="tab ${state.tab === 'bookings' ? 'tab-active' : ''}" onclick="setState({tab:'bookings'}); loadBookings()">📅 Бронирования</div>
+            <div class="tab ${state.tab === 'revenue' ? 'tab-active' : ''}" onclick="setState({tab:'revenue'}); loadPurchases()">💰 Доходы</div>
+          </div>
+          ${state.tab === 'properties' ? renderProperties() : ''}
+          ${state.tab === 'bookings' ? renderBookings() : ''}
+          ${state.tab === 'revenue' ? renderRevenue() : ''}
+        </div>
+      `;
+    }
+
+    function renderProperties() {
+      const addForm = state.showAddProperty ? `
+        <div class="card p-4 mb-4">
+          <h3 class="font-semibold mb-3">Новый объект</h3>
+          <input class="input mb-2" id="prop-name" placeholder="Название (например: Студия на Арбате)">
+          <input class="input mb-3" id="prop-addr" placeholder="Адрес">
+          <div class="flex gap-2">
+            <button class="btn btn-primary" onclick="addProperty(document.getElementById('prop-name').value, document.getElementById('prop-addr').value)">Добавить</button>
+            <button class="btn btn-secondary" onclick="setState({showAddProperty:false})">Отмена</button>
+          </div>
+        </div>
+      ` : '';
+
+      return `
+        <div class="flex justify-between items-center mb-4">
+          <h2 class="text-lg font-semibold text-gray-700">${state.properties.length} объектов</h2>
+          <button class="btn btn-primary" onclick="setState({showAddProperty:true})">+ Добавить объект</button>
+        </div>
+        ${addForm}
+        ${state.properties.map(p => renderProperty(p)).join('')}
+      `;
+    }
+
+    function renderProperty(p) {
+      const anc = state.ancillaries[p.id];
+      const isExpanded = anc !== undefined;
+
+      const addAncForm = state.showAddAncillary === p.id ? `
+        <div class="bg-gray-50 p-3 rounded-lg mt-3">
+          <input class="input mb-2" id="anc-name-${p.id}" placeholder="Название услуги">
+          <div class="flex gap-2 mb-2">
+            <input class="input" id="anc-wd-${p.id}" placeholder="Цена будни ₽" type="number">
+            <input class="input" id="anc-we-${p.id}" placeholder="Цена выходные ₽" type="number">
+          </div>
+          <div class="flex gap-2">
+            <button class="btn btn-primary text-sm" onclick="addAncillary('${p.id}', document.getElementById('anc-name-${p.id}').value, +document.getElementById('anc-wd-${p.id}').value, +document.getElementById('anc-we-${p.id}').value)">Добавить</button>
+            <button class="btn btn-secondary text-sm" onclick="setState({showAddAncillary:null})">Отмена</button>
+          </div>
+        </div>
+      ` : '';
+
+      const ancList = anc ? anc.map(a => {
+        if (state.editingAncillary === a.id) {
+          return `
+            <div class="flex items-center gap-2 py-2 border-b border-gray-100">
+              <input class="input text-sm" id="edit-name-${a.id}" value="${a.name}" style="width:40%">
+              <input class="input text-sm" id="edit-wd-${a.id}" value="${a.price_weekday}" type="number" style="width:15%">
+              <input class="input text-sm" id="edit-we-${a.id}" value="${a.price_weekend}" type="number" style="width:15%">
+              <button class="btn btn-primary text-xs" onclick="updateAncillary('${a.id}','${p.id}',{name:document.getElementById('edit-name-${a.id}').value,price_weekday:+document.getElementById('edit-wd-${a.id}').value,price_weekend:+document.getElementById('edit-we-${a.id}').value})">✓</button>
+              <button class="btn btn-secondary text-xs" onclick="setState({editingAncillary:null})">✕</button>
+            </div>
+          `;
+        }
+        return `
+          <div class="flex items-center justify-between py-2 border-b border-gray-100 ${!a.is_active ? 'opacity-40' : ''}">
+            <div class="flex-1">
+              <span class="text-sm font-medium">${a.name}</span>
+              <span class="text-xs text-gray-400 ml-2">₽${a.price_weekday} / ₽${a.price_weekend}</span>
+            </div>
+            <div class="flex items-center gap-2">
+              <div class="toggle ${a.is_active ? 'toggle-on' : 'toggle-off'}" onclick="toggleAncillary('${a.id}','${p.id}',${a.is_active})"></div>
+              <button class="text-xs text-blue-600 hover:underline" onclick="setState({editingAncillary:'${a.id}'})">✎</button>
+              <button class="text-xs text-red-400 hover:text-red-600" onclick="if(confirm('Удалить?')) deleteAncillary('${a.id}','${p.id}')">✕</button>
+            </div>
+          </div>
+        `;
+      }).join('') : '';
+
+      return `
+        <div class="card p-4 mb-3">
+          <div class="flex items-center justify-between cursor-pointer" onclick="${isExpanded ? '' : `loadAncillaries('${p.id}')`}">
+            <div>
+              <h3 class="font-semibold text-gray-800">${p.name}</h3>
+              <p class="text-sm text-gray-500">${p.address || ''}</p>
+            </div>
+            <span class="text-gray-400">${isExpanded ? '▼' : '▶'}</span>
+          </div>
+          ${isExpanded ? `
+            <div class="mt-4">
+              <div class="flex items-center justify-between mb-2">
+                <span class="text-sm font-semibold text-gray-600">Услуги (${anc.length})</span>
+                <div class="flex gap-2">
+                  ${anc.length === 0 ? `<button class="btn btn-primary text-xs" onclick="addTemplates('${p.id}')">+ Добавить шаблоны (10 услуг)</button>` : ''}
+                  <button class="btn btn-secondary text-xs" onclick="setState({showAddAncillary:'${p.id}'})">+ Своя услуга</button>
+                </div>
+              </div>
+              ${anc.length > 0 ? `
+                <div class="text-xs text-gray-400 flex justify-between px-1 mb-1">
+                  <span>Название</span><span>Будни / Выходные</span>
+                </div>
+              ` : '<p class="text-sm text-gray-400 py-2">Услуг пока нет. Добавьте шаблоны или свою услугу.</p>'}
+              ${ancList}
+              ${addAncForm}
+            </div>
+          ` : ''}
+        </div>
+      `;
+    }
+
+    function renderBookings() {
+      const propOptions = state.properties.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
+
+      const addForm = state.showAddBooking ? `
+        <div class="card p-4 mb-4">
+          <h3 class="font-semibold mb-3">Новое бронирование</h3>
+          <select class="input mb-2" id="bk-prop">${propOptions}</select>
+          <input class="input mb-2" id="bk-guest" placeholder="Имя гостя">
+          <div class="flex gap-2 mb-3">
+            <input class="input" id="bk-in" type="date">
+            <input class="input" id="bk-out" type="date">
+          </div>
+          <div class="flex gap-2">
+            <button class="btn btn-primary" onclick="addBooking(document.getElementById('bk-prop').value, document.getElementById('bk-guest').value, document.getElementById('bk-in').value, document.getElementById('bk-out').value)">Создать</button>
+            <button class="btn btn-secondary" onclick="setState({showAddBooking:false})">Отмена</button>
+          </div>
+        </div>
+      ` : '';
+
+      const rows = state.bookings.map(b => {
+        const link = `https://t.me/${BOT_USERNAME}?start=b_${b.id}`;
+        const today = new Date().toISOString().split('T')[0];
+        const isPast = b.checkout_date < today;
+        return `
+          <div class="card p-4 mb-2 ${isPast ? 'opacity-50' : ''}">
+            <div class="flex justify-between items-start">
+              <div>
+                <span class="font-semibold">${b.guest_name || 'Без имени'}</span>
+                <span class="text-sm text-gray-400 ml-2">${b.properties?.name || ''}</span>
+                <p class="text-sm text-gray-500 mt-1">📅 ${b.checkin_date} → ${b.checkout_date}</p>
+              </div>
+              <button class="btn btn-secondary text-xs" onclick="navigator.clipboard.writeText('${link}'); this.textContent='Скопировано!'">📋 Ссылка для гостя</button>
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      return `
+        <div class="flex justify-between items-center mb-4">
+          <h2 class="text-lg font-semibold text-gray-700">${state.bookings.length} бронирований</h2>
+          <button class="btn btn-primary" onclick="setState({showAddBooking:true})">+ Новое бронирование</button>
+        </div>
+        ${addForm}
+        ${rows || '<p class="text-gray-400">Бронирований пока нет.</p>'}
+      `;
+    }
+
+    function renderRevenue() {
+      const total = state.purchases.reduce((s, p) => s + p.price_paid, 0);
+      const fee = Math.round(total * 0.1);
+
+      const rows = state.purchases.map(p => `
+        <div class="flex justify-between items-center py-2 border-b border-gray-100">
+          <div>
+            <span class="text-sm font-medium">${p.ancillaries?.name || 'Услуга'}</span>
+            <span class="text-xs text-gray-400 ml-2">${p.bookings?.guest_name || ''} · ${p.bookings?.properties?.name || ''}</span>
+          </div>
+          <span class="font-semibold text-green-600">₽${p.price_paid.toLocaleString()}</span>
+        </div>
+      `).join('');
+
+      return `
+        <div class="grid grid-cols-3 gap-4 mb-6">
+          <div class="card p-4 text-center">
+            <p class="text-sm text-gray-500">Всего продаж</p>
+            <p class="text-2xl font-bold text-gray-800">₽${total.toLocaleString()}</p>
+          </div>
+          <div class="card p-4 text-center">
+            <p class="text-sm text-gray-500">Комиссия (10%)</p>
+            <p class="text-2xl font-bold text-orange-500">₽${fee.toLocaleString()}</p>
+          </div>
+          <div class="card p-4 text-center">
+            <p class="text-sm text-gray-500">Ваш доход</p>
+            <p class="text-2xl font-bold text-green-600">₽${(total - fee).toLocaleString()}</p>
+          </div>
+        </div>
+        <div class="card p-4">
+          <h3 class="font-semibold mb-3">Последние покупки</h3>
+          ${rows || '<p class="text-gray-400">Покупок пока нет.</p>'}
+        </div>
+      `;
+    }
+
+    // Init
+    loadProperties();
+    render();
+  </script>
+</body>
+</html>
