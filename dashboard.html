@@ -389,7 +389,7 @@
                 <span class="text-sm text-gray-400 ml-2">${b.properties?.name || ''}</span>
                 <p class="text-sm text-gray-500 mt-1">📅 ${b.checkin_date} → ${b.checkout_date}</p>
               </div>
-              <button class="btn btn-secondary text-xs" onclick="navigator.clipboard.writeText('${link}'); this.textContent='Скопировано!'">📋 Ссылка для гостя</button>
+              <button class="btn btn-secondary text-xs" onclick="navigator.clipboard.writeText('Здравствуйте, ${b.guest_name}! Мы подготовили для вас дополнительные услуги к проживанию: ранний заезд, поздний выезд, трансфер и другое. Посмотреть и заказать: ${link}'); this.textContent='Скопировано!'">📋 Скопировать сообщение</button>
             </div>
           </div>
         `;
