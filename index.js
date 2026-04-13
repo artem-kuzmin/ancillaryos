@@ -353,12 +353,15 @@ const RAILWAY_URL = process.env.RAILWAY_PUBLIC_DOMAIN;
 if (RAILWAY_URL) {
   const webhookUrl = `https://${RAILWAY_URL}/bot`;
   app.use(express.json());
-  app.post('/bot', (req, res) => {
+  app.post('/bot', async (req, res) => {
     console.log('Получен webhook запрос, body:', JSON.stringify(req.body).slice(0, 200));
-    bot.handleUpdate(req.body, res).catch(err => {
-      console.log('Ошибка обработки:', err.message);
+    try {
+      await bot.handleUpdate(req.body, res);
+      console.log('Update обработан успешно');
+    } catch (err) {
+      console.log('Ошибка обработки:', err.message, err.stack);
       res.sendStatus(500);
-    });
+    }
   });
   
   app.get('/', (req, res) => res.send('AncillaryOS работает'));
